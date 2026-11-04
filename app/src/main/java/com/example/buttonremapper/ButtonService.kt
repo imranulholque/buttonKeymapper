@@ -67,8 +67,9 @@ class ButtonService : AccessibilityService() {
             // Both buttons together (pressed within comboMs of each other)
             if (otherDown && now - otherTime <= comboMs && comboAction != Prefs.NONE) {
                 cancelPending()
-                consumedUp = true
-                consumedDown = true
+                // only the key whose DOWN we swallow right now; the other key keeps the
+                // flag it already had, so its UP is never swallowed by mistake
+                if (isUp) consumedUp = true else consumedDown = true
                 runAction(comboAction)
                 return true
             }

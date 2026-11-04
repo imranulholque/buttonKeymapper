@@ -30,6 +30,9 @@ object Prefs {
     fun enabled(c: Context) = sp(c).getBoolean("enabled", true)
     fun setEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean("enabled", v).apply()
 
+    fun keepAlive(c: Context) = sp(c).getBoolean("keepalive", true)
+    fun setKeepAlive(c: Context, v: Boolean) = sp(c).edit().putBoolean("keepalive", v).apply()
+
     fun get(c: Context, key: String): Int {
         val def = when (key) {
             KEY_UP -> POWER

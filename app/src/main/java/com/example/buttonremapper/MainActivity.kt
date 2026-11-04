@@ -47,6 +47,22 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, v -> Prefs.setEnabled(this@MainActivity, v) }
         })
 
+        root.addView(Switch(this).apply {
+            text = "Wake screen with button when screen is OFF (silent media trick, shows a notification)"
+            isChecked = Prefs.keepAlive(this@MainActivity)
+            setPadding(0, 0, 0, pad)
+            setOnCheckedChangeListener { _, v ->
+                Prefs.setKeepAlive(this@MainActivity, v)
+                val i = Intent(this@MainActivity, KeepAliveService::class.java)
+                if (v) {
+                    if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1)
+                    }
+                    startForegroundService(i)
+                } else stopService(i)
+            }
+        })
+
         addRow(root, "Volume UP press does:", Prefs.KEY_UP)
         addRow(root, "Volume DOWN press does:", Prefs.KEY_DOWN)
         addRow(root, "Volume UP + DOWN together does:", Prefs.KEY_BOTH)
@@ -79,6 +95,9 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (Prefs.enabled(this) && Prefs.keepAlive(this)) {
+            try { startForegroundService(Intent(this, KeepAliveService::class.java)) } catch (_: Exception) {}
+        }
         val list = Settings.Secure.getString(
             contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: ""

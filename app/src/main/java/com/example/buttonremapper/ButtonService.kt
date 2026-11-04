@@ -19,6 +19,27 @@ class ButtonService : AccessibilityService() {
     private var consumedDown = false
     private var pending: Runnable? = null
 
+    companion object {
+        @Volatile var instance: ButtonService? = null
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+        if (Prefs.enabled(this) && Prefs.keepAlive(this)) {
+            try {
+                val i = android.content.Intent(this, KeepAliveService::class.java)
+                startForegroundService(i)
+            } catch (_: Exception) { }
+        }
+    }
+
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        instance = null
+        stopService(android.content.Intent(this, KeepAliveService::class.java))
+        return super.onUnbind(intent)
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
@@ -94,22 +115,13 @@ class ButtonService : AccessibilityService() {
         if (pm.isInteractive) {
             performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
         } else {
-            @Suppress("DEPRECATION")
-            val wl = pm.newWakeLock(
-                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                    PowerManager.ON_AFTER_RELEASE,
-                "buttonremapper:wake"
-            )
-            wl.acquire(3000)
-            // If the lock screen is "swipe only" (no PIN/pattern), swipe it away = unlock
-            handler.postDelayed({ swipeUpIfNotSecure() }, 700)
+            Waker.wake(this)
         }
     }
 
-    private fun swipeUpIfNotSecure() {
+    fun swipeToUnlock() {
         val km = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
-        if (!km.isKeyguardLocked || km.isDeviceSecure) return
+        if (!km.isKeyguardLocked) return
         val dm = resources.displayMetrics
         val w = dm.widthPixels.toFloat()
         val h = dm.heightPixels.toFloat()

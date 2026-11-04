@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Button Remapper</string>
+    <string name="service_desc">Lets volume buttons act as power button (lock/wake) and take screenshots. Turn this off or uninstall the app to restore normal button behavior.</string>
+</resources>

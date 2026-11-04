@@ -7,6 +7,7 @@ import android.graphics.Path
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 
@@ -18,6 +19,9 @@ class ButtonService : AccessibilityService() {
     private var consumedUp = false
     private var consumedDown = false
     private var pending: Runnable? = null
+    private var upTime = 0L
+    private var downTime = 0L
+    private val comboMs = 150L   // both buttons must go down within this time
 
     companion object {
         @Volatile var instance: ButtonService? = null
@@ -54,12 +58,14 @@ class ButtonService : AccessibilityService() {
         if (e.action == KeyEvent.ACTION_DOWN) {
             if (e.repeatCount > 0) return if (isUp) consumedUp else consumedDown
 
-            if (isUp) upDown = true else downDown = true
+            val now = SystemClock.elapsedRealtime()
+            if (isUp) { upDown = true; upTime = now } else { downDown = true; downTime = now }
             val otherDown = if (isUp) downDown else upDown
+            val otherTime = if (isUp) downTime else upTime
             val comboAction = Prefs.get(this, Prefs.KEY_BOTH)
 
-            // Both buttons together
-            if (otherDown && comboAction != Prefs.NONE) {
+            // Both buttons together (pressed within comboMs of each other)
+            if (otherDown && now - otherTime <= comboMs && comboAction != Prefs.NONE) {
                 cancelPending()
                 consumedUp = true
                 consumedDown = true

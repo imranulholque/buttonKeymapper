@@ -4,6 +4,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -101,13 +103,21 @@ class KeepAliveService : Service() {
                 .setState(PlaybackState.STATE_PLAYING, 0, 1f)
                 .build()
         )
-        s.setPlaybackToRemote(object : android.media.VolumeProvider(VOLUME_CONTROL_RELATIVE, 100, 50) {
+        provider = object : android.media.VolumeProvider(
+            android.media.VolumeProvider.VOLUME_CONTROL_RELATIVE, 100, 50
+        ) {
             override fun onAdjustVolume(direction: Int) {
                 handleKey(direction)
             }
+        }
+        session = s
+        val pmNow = getSystemService(Context.POWER_SERVICE) as PowerManager
+        updateMode(pmNow.isInteractive)
+        registerReceiver(screenReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
         })
         s.isActive = true
-        session = s
         startSensors()
     }
 
@@ -178,19 +188,36 @@ class KeepAliveService : Service() {
         sensorLock = null
     }
 
+    private var provider: android.media.VolumeProvider? = null
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            updateMode(i.action == Intent.ACTION_SCREEN_ON)
+        }
+    }
+
+    /** Screen ON  -> normal system volume (we do not touch it).
+     *  Screen OFF -> we receive the volume keys so Volume Up can wake the phone. */
+    private fun updateMode(screenOn: Boolean) {
+        val sess = session ?: return
+        try {
+            if (screenOn) {
+                sess.setPlaybackToLocal(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+            } else {
+                provider?.let { sess.setPlaybackToRemote(it) }
+            }
+        } catch (_: Exception) { }
+    }
+
     private fun handleKey(direction: Int) {
         if (direction == 0) return
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        if (pm.isInteractive) {
-            // screen is on -> behave like a normal volume key
-            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            am.adjustStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                if (direction > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
-                AudioManager.FLAG_SHOW_UI
-            )
-            return
-        }
+        if (pm.isInteractive) return
         if (!Prefs.enabled(this)) return
         val key = if (direction > 0) Prefs.KEY_UP else Prefs.KEY_DOWN
         if (Prefs.get(this, key) == Prefs.POWER) Waker.wake(this)
@@ -198,6 +225,7 @@ class KeepAliveService : Service() {
 
     override fun onDestroy() {
         running = false
+        try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         stopSensors()
         try { session?.isActive = false; session?.release() } catch (_: Exception) {}
         try { track?.stop(); track?.release() } catch (_: Exception) {}

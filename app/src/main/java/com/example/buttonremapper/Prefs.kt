@@ -33,6 +33,11 @@ object Prefs {
     fun keepAlive(c: Context) = sp(c).getBoolean("keepalive", true)
     fun setKeepAlive(c: Context, v: Boolean) = sp(c).edit().putBoolean("keepalive", v).apply()
 
+    fun wave(c: Context) = sp(c).getBoolean("wave", true)
+    fun setWave(c: Context, v: Boolean) = sp(c).edit().putBoolean("wave", v).apply()
+    fun shake(c: Context) = sp(c).getBoolean("shake", true)
+    fun setShake(c: Context, v: Boolean) = sp(c).edit().putBoolean("shake", v).apply()
+
     fun get(c: Context, key: String): Int {
         val def = when (key) {
             KEY_UP -> POWER

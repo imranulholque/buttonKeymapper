@@ -63,6 +63,19 @@ class MainActivity : Activity() {
             }
         })
 
+        root.addView(Switch(this).apply {
+            text = "Wake screen when hand waved over top / phone taken out of pocket"
+            isChecked = Prefs.wave(this@MainActivity)
+            setPadding(0, 0, 0, pad)
+            setOnCheckedChangeListener { _, v -> Prefs.setWave(this@MainActivity, v); restartKeep() }
+        })
+        root.addView(Switch(this).apply {
+            text = "Wake screen by shaking the phone (uses more battery)"
+            isChecked = Prefs.shake(this@MainActivity)
+            setPadding(0, 0, 0, pad)
+            setOnCheckedChangeListener { _, v -> Prefs.setShake(this@MainActivity, v); restartKeep() }
+        })
+
         addRow(root, "Volume UP press does:", Prefs.KEY_UP)
         addRow(root, "Volume DOWN press does:", Prefs.KEY_DOWN)
         addRow(root, "Volume UP + DOWN together does:", Prefs.KEY_BOTH)
@@ -72,6 +85,14 @@ class MainActivity : Activity() {
             text = "To restore normal buttons: switch 'Remapping enabled' off, " +
                 "or turn the service off in Accessibility settings, or uninstall the app."
         })
+    }
+
+    private fun restartKeep() {
+        val i = Intent(this, KeepAliveService::class.java)
+        stopService(i)
+        if (Prefs.enabled(this) && Prefs.keepAlive(this)) {
+            try { startForegroundService(i) } catch (_: Exception) {}
+        }
     }
 
     private fun addRow(root: LinearLayout, title: String, key: String) {

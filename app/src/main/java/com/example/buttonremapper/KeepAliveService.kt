@@ -14,6 +14,12 @@ import android.media.AudioTrack
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.SystemClock
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import kotlin.math.sqrt
 import android.os.IBinder
 import android.os.PowerManager
 import android.view.KeyEvent
@@ -102,6 +108,74 @@ class KeepAliveService : Service() {
         })
         s.isActive = true
         session = s
+        startSensors()
+    }
+
+    // ---------- Wake without any button: take out of pocket / wave hand / shake ----------
+    private var sm: SensorManager? = null
+    private var sensorLock: PowerManager.WakeLock? = null
+    private var lastNear = false
+    private var lastPeak = 0L
+    private var peaks = 0
+
+    private val sensorListener = object : SensorEventListener {
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        override fun onSensorChanged(e: SensorEvent) {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            when (e.sensor.type) {
+                Sensor.TYPE_PROXIMITY -> {
+                    val near = e.values[0] < e.sensor.maximumRange
+                    // near -> far while screen is off = hand wave / taken out of pocket
+                    if (lastNear && !near && !pm.isInteractive &&
+                        Prefs.enabled(this@KeepAliveService) && Prefs.wave(this@KeepAliveService)
+                    ) Waker.wake(this@KeepAliveService)
+                    lastNear = near
+                }
+                Sensor.TYPE_ACCELEROMETER -> {
+                    val x = e.values[0]; val y = e.values[1]; val z = e.values[2]
+                    val g = sqrt(x * x + y * y + z * z)
+                    if (g > 20f) {
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastPeak > 150) {
+                            peaks = if (now - lastPeak < 1000) peaks + 1 else 1
+                            lastPeak = now
+                            if (peaks >= 3) {
+                                peaks = 0
+                                if (!pm.isInteractive && Prefs.enabled(this@KeepAliveService) &&
+                                    Prefs.shake(this@KeepAliveService)
+                                ) Waker.wake(this@KeepAliveService)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun startSensors() {
+        val m = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        sm = m
+        if (Prefs.wave(this)) {
+            val prox = m.getDefaultSensor(Sensor.TYPE_PROXIMITY, true)
+                ?: m.getDefaultSensor(Sensor.TYPE_PROXIMITY)
+            if (prox != null) m.registerListener(sensorListener, prox, SensorManager.SENSOR_DELAY_NORMAL)
+        }
+        if (Prefs.shake(this)) {
+            val acc = m.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            if (acc != null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                sensorLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "buttonremapper:sensor")
+                @Suppress("WakelockTimeout")
+                sensorLock?.acquire()
+                m.registerListener(sensorListener, acc, SensorManager.SENSOR_DELAY_GAME)
+            }
+        }
+    }
+
+    private fun stopSensors() {
+        try { sm?.unregisterListener(sensorListener) } catch (_: Exception) {}
+        try { if (sensorLock?.isHeld == true) sensorLock?.release() } catch (_: Exception) {}
+        sensorLock = null
     }
 
     private fun handleKey(direction: Int) {
@@ -124,6 +198,7 @@ class KeepAliveService : Service() {
 
     override fun onDestroy() {
         running = false
+        stopSensors()
         try { session?.isActive = false; session?.release() } catch (_: Exception) {}
         try { track?.stop(); track?.release() } catch (_: Exception) {}
         super.onDestroy()
